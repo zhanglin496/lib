@@ -2,21 +2,22 @@
 #define _APUE_DB_H
 
 #include <sys/types.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef	void *	DBHANDLE;
+typedef	void * DBHANDLE;
 
-DBHANDLE  db_open(const char *, int, ...);
-void      db_close(DBHANDLE);
-char     *db_fetch(DBHANDLE, const void *,  size_t);
-int       db_store(DBHANDLE, const void *, size_t, const void *, size_t, int);
-int       db_delete(DBHANDLE, const void *, size_t);
-void      db_rewind(DBHANDLE);
-char    *db_nextrec(DBHANDLE, void *);
-int 	db_drop(const char *);
+DBHANDLE db_open(const char *, int, ...);
+void db_close(DBHANDLE);
+void *db_fetch(DBHANDLE, const void *,  size_t);
+int db_store(DBHANDLE, const void *, size_t, const void *, size_t, int);
+int db_delete(DBHANDLE, const void *, size_t);
+void db_rewind(DBHANDLE);
+void *db_nextrec(DBHANDLE, void *);
+int db_drop(const char *);
 int db_fsync(DBHANDLE h);
 
 int lock_reg(int fd, int cmd, int type, off_t offset, int whence, off_t len);
@@ -42,20 +43,22 @@ int lock_reg(int fd, int cmd, int type, off_t offset, int whence, off_t len);
 /*
  * Implementation limits.
  */
-//#define IDXLEN_MIN	   6	/* key, sep, start, sep, length, \n */
-#define IDXLEN_MAX	1024	/* arbitrary */
-//#define DATLEN_MIN	   2	/* data byte, newline */
+#define KEYLEN_MAX	1024	/* arbitrary */
 #define DATLEN_MAX	2048	/* arbitrary */
 
 #define IDX_INVALID	(1<<0)
 
 struct idx_record {
-	off_t  idx_nextptr;
-	size_t  flags;
-	size_t  idx_len;
-	size_t  offset;
-	size_t  datalen;
-	//key
+	off_t idx_nextptr;	/* the next offset of the index file, 0 means end */
+	off_t dataoff;	/* the data offset of the data file, 0 means no data */
+	size_t keylen;	/* the key used space */
+	size_t keyfree;	/* the key free space */
+	size_t datalen;	/* the data used space */
+	size_t datafree; /* the data free space */
+	uint32_t flags; /* internal use */
+	/*	save the key 
+	*	char key[0];
+	*/
 };
 
 #ifdef __cplusplus
