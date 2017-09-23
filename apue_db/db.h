@@ -10,13 +10,18 @@ extern "C" {
 
 typedef	void * DBHANDLE;
 
+#define min_t(type, x, y) ({				\
+		type __min1 = (x);                      \
+		type __min2 = (y);                      \
+		__min1 < __min2 ? __min1 : __min2; })
+
 DBHANDLE db_open(const char *, int, ...);
 void db_close(DBHANDLE);
-void *db_fetch(DBHANDLE, const void *,  size_t);
+void *db_fetch(DBHANDLE, const void *,  size_t, size_t *);
 int db_store(DBHANDLE, const void *, size_t, const void *, size_t, int);
 int db_delete(DBHANDLE, const void *, size_t);
 void db_rewind(DBHANDLE);
-void *db_nextrec(DBHANDLE, void *);
+void *db_nextrec(DBHANDLE, void *, size_t, size_t *);
 int db_drop(const char *);
 int db_fsync(DBHANDLE h);
 
@@ -46,7 +51,7 @@ int lock_reg(int fd, int cmd, int type, off_t offset, int whence, off_t len);
 #define KEYLEN_MAX	1024	/* arbitrary */
 #define DATLEN_MAX	2048	/* arbitrary */
 
-#define IDX_INVALID	(1<<0)
+#define IDX_INVALID	(1U<<0)
 
 struct idx_record {
 	off_t idx_nextptr;	/* the next offset of the index file, 0 means end */

@@ -10,8 +10,8 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "apue_db.h"
-//#include "../include/jhash.h"
+#include "db.h"
+#include "jhash.h"
 
 /* 
  * Internal index file constants.
@@ -76,7 +76,7 @@ static int _db_find_and_lock(DB *, const void *, size_t, int);
 static int _db_findfree(DB *, int, int);
 static void _db_free(DB *);
 static DBHASH _db_hash(DB *, const void *, size_t);
-static void *_db_readdat(DB *);
+static void *_db_readdat(DB *, size_t *);
 static off_t _db_readidx(DB *, off_t);
 static off_t _db_readptr(DB *, off_t);
 static void _db_writedat(DB *, const void *, size_t, off_t, int);
@@ -266,7 +266,7 @@ static void _db_free(DB *db)
 /*
  * Fetch a record.  Return a pointer to the data.
  */
-void *db_fetch(DBHANDLE h, const void *key, size_t keylen)
+void *db_fetch(DBHANDLE h, const void *key, size_t keylen, size_t *datlen)
 {
 	DB *db = h;
 	void *ptr;
@@ -275,7 +275,7 @@ void *db_fetch(DBHANDLE h, const void *key, size_t keylen)
 		ptr = NULL;				/* error, record not found */
 		db->cnt_fetcherr++;
 	} else {
-		ptr = _db_readdat(db);	/* return pointer to data */
+		ptr = _db_readdat(db, datlen);	/* return pointer to data */
 		db->cnt_fetchok++;
 	}
 
@@ -301,7 +301,7 @@ static int _db_find_and_lock(DB *db, const void *key, size_t keylen, int writelo
 	 * offset in the hash table for this key.
 	 */
 
-	db->chainoff = (_db_hash(db, key, keylen) * PTR_SZ) + db->hashoff;
+	db->chainoff = (_db_hash(db, key, keylen)*PTR_SZ) + db->hashoff;
 	db->ptroff = db->chainoff;
 
 	/*
@@ -321,7 +321,7 @@ static int _db_find_and_lock(DB *db, const void *key, size_t keylen, int writelo
 	offset = _db_readptr(db, db->ptroff);
 	while (offset > 0) {
 		nextoffset = _db_readidx(db, offset);
-		if (db->idx.keylen == keylen && !memcmp(db->keybuf, key, db->idx.keylen))
+		if (db->idx.keylen == keylen && !memcmp(db->keybuf, key, keylen))
 			break;
 		db->ptroff = offset; /* offset of this (unequal) record */
 		offset = nextoffset; /* next one to compare */
@@ -389,6 +389,7 @@ static off_t _db_readidx(DB *db, off_t offset)
 	if (n < 0 || n != db->idx.keylen)
 		return -1;
 
+	lseek(db->idxfd, db->idx.keyfree, SEEK_CUR);
 	/* get current offset */
 	db->curroff = lseek(db->idxfd, 0, SEEK_CUR);
 
@@ -399,12 +400,15 @@ static off_t _db_readidx(DB *db, off_t offset)
  * Read the current data record into the data buffer.
  * Return a pointer to the null-terminated data buffer.
  */
-static void *_db_readdat(DB *db)
+static void *_db_readdat(DB *db, size_t *datlen)
 {
+	size_t len = min_t(size_t, db->idx.datalen, DATLEN_MAX);
 	if (lseek(db->datfd, db->idx.dataoff, SEEK_SET) == -1)
 		return NULL;
-	if (read(db->datfd, db->datbuf, db->idx.datalen) != db->idx.datalen)
+	if (len && read(db->datfd, db->datbuf, len) != len)
 		return NULL;
+	*datlen = len;
+
 	return db->datbuf;		/* return pointer to data record */
 }
 
@@ -461,7 +465,6 @@ static void _db_dodelete(DB *db)
 	 * none of which has changed, but that's OK.
 	 */
 
-	//
 	db->idx.flags = IDX_INVALID;
 	db->idx.idx_nextptr = freeptr;
 	_db_updateidx(db, db->idxoff, SEEK_SET, &db->idx);
@@ -521,7 +524,7 @@ static void _db_writeidx(DB *db, const void *key,
 	 * overwriting an existing record, we don't have to lock.
 	 */
 	if (whence == SEEK_END)		/* we're appending */
-		writew_lock(db->idxfd, db->nhash * PTR_SZ + db->hashoff,
+		writew_lock(db->idxfd, db->nhash*PTR_SZ + db->hashoff,
 			  SEEK_SET, 0);
 	/*
 	 * Position the index file and record the offset.
@@ -538,7 +541,7 @@ static void _db_writeidx(DB *db, const void *key,
 
 out:
 	if (whence == SEEK_END)
-		un_lock(db->idxfd, db->nhash * PTR_SZ + db->hashoff,
+		un_lock(db->idxfd, db->nhash*PTR_SZ + db->hashoff,
 			  SEEK_SET, 0);
 }
 
@@ -557,7 +560,7 @@ static void _db_updateidx(DB *db, off_t offset,
 	 * overwriting an existing record, we don't have to lock.
 	 */
 	if (whence == SEEK_END)		/* we're appending */
-		writew_lock(db->idxfd, db->nhash * PTR_SZ + db->hashoff,
+		writew_lock(db->idxfd, db->nhash*PTR_SZ + db->hashoff,
 			  SEEK_SET, 0);
 	/*
 	 * Position the index file and record the offset.
@@ -569,7 +572,7 @@ static void _db_updateidx(DB *db, off_t offset,
 
 out:
 	if (whence == SEEK_END)
-		un_lock(db->idxfd, db->nhash * PTR_SZ + db->hashoff,
+		un_lock(db->idxfd, db->nhash*PTR_SZ + db->hashoff,
 			  SEEK_SET, 0);
 }
 
@@ -638,7 +641,7 @@ int db_store(DBHANDLE h, const void *key, size_t keylen,
 			db->idx.datafree = 0;
 			db->idx.flags = 0;
 			_db_writeidx(db, key, 0, SEEK_END, &db->idx);
-
+			printf("create new index\n");
 			/*
 			 * db->idxoff was set by _db_writeidx.  The new
 			 * record goes to the front of the hash chain.
@@ -658,6 +661,7 @@ int db_store(DBHANDLE h, const void *key, size_t keylen,
 			db->idx.datafree = db->idx.datalen + db->idx.datafree - datlen;
 			db->idx.datalen = datlen;
 			db->idx.flags = 0;
+			printf("use free index\n");
 
 			_db_writeidx(db, key, db->idxoff, SEEK_SET, &db->idx);
 			_db_writeptr(db, db->chainoff, db->idxoff);
@@ -683,7 +687,7 @@ int db_store(DBHANDLE h, const void *key, size_t keylen,
 			 * (it may change with the deletion).
 			 */
 			ptrval = _db_readptr(db, db->chainoff);
-
+			printf("override index 1\n");
 			/*
 			 * Append new index and data records to end of files.
 			 */
@@ -706,6 +710,7 @@ int db_store(DBHANDLE h, const void *key, size_t keylen,
 			/*
 			 * Same size data, just replace data record.
 			 */
+			 printf("override index 2\n");
 			_db_writedat(db, data, datlen, db->idx.dataoff, SEEK_SET);
 			if (db->idx.datalen != datlen) {
 				db->idx.datafree = db->idx.datalen + db->idx.datafree - datlen;
@@ -791,7 +796,7 @@ void db_rewind(DBHANDLE h)
 	DB *db = h;
 	off_t offset;
 
-	offset = db->nhash * PTR_SZ + db->hashoff;
+	offset = db->nhash*PTR_SZ + db->hashoff;
 
 	/*
 	 * We're just setting the file offset for this process
@@ -807,7 +812,7 @@ void db_rewind(DBHANDLE h)
  * records.  db_rewind must be called before this function is
  * called the first time.
  */
-void *db_nextrec(DBHANDLE h, void *key)
+void *db_nextrec(DBHANDLE h, void *key, size_t keylen, size_t *datlen)
 {
 	DB *db = h;
 	void *ptr;
@@ -825,15 +830,16 @@ void *db_nextrec(DBHANDLE h, void *key)
 			ptr = NULL;		/* end of index file, EOF */
 			goto doreturn;
 		}
+		printf("read idx\n");
 		if (db->idx.flags & IDX_INVALID)
 			continue;
 		break;
 	}
 
-	if (key != NULL)
-		memcpy(key, db->keybuf, db->idx.keylen);	/* return key */
+	if (key)
+		memcpy(key, db->keybuf, min_t(size_t, db->idx.keylen, keylen));	/* return key */
 
-	ptr = _db_readdat(db);	/* return pointer to data buffer */
+	ptr = _db_readdat(db, datlen);	/* return pointer to data buffer */
 	db->cnt_nextrec++;
 doreturn:
 	un_lock(db->idxfd, FREE_OFF, SEEK_SET, 1);
@@ -858,7 +864,6 @@ int db_drop(const char *name)
 
 	if (len > sizeof(buf) - 5)
 		return -1;
-	//we need not have lock
 	strcpy(buf, name);
 
 	strcpy(buf + len, ".idx");
