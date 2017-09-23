@@ -222,7 +222,6 @@ static DB *_db_alloc(int namelen)
 		goto fail;
 	/*
 	 * Allocate an index buffer and a data buffer.
-	 * +2 for newline and null at end.
 	 */
 	if (!(db->keybuf = malloc(KEYLEN_MAX)))
 		goto fail;
