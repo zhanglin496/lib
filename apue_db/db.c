@@ -192,9 +192,10 @@ DBHANDLE db_open(const char *pathname, int oflag, ...)
 	readw_lock(db->idxfd, 0, SEEK_SET, 1);
 	read(db->idxfd, &db->nhash, sizeof(db->nhash));
 	un_lock(db->idxfd, 0, SEEK_SET, 1);
-	
+
 	db_rewind(db);
 	return db;
+
 fail:	
 	_db_free(db);
 	return NULL;
