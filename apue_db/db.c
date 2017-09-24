@@ -2,6 +2,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <errno.h>
 #include <sys/uio.h>	/* struct iovec */
 #include <sys/types.h>
@@ -73,7 +74,7 @@ typedef struct {
 static DB *_db_alloc(int);
 static void _db_dodelete(DB *);
 static int _db_find_and_lock(DB *, const void *, size_t, int);
-static int _db_findfree(DB *, int, int);
+static int _db_findfree(DB *, size_t, size_t);
 static void _db_free(DB *);
 static DBHASH _db_hash(DB *, const void *, size_t);
 static void *_db_readdat(DB *, size_t *);
@@ -228,6 +229,7 @@ static DB *_db_alloc(int namelen)
 	if (!(db->datbuf = malloc(DATLEN_MAX)))
 		goto fail;
 	return db;
+
 fail:
 	_db_free(db);
 	return NULL;
@@ -253,11 +255,11 @@ static void _db_free(DB *db)
 		close(db->idxfd);
 	if (db->datfd >= 0)
 		close(db->datfd);
-	if (db->keybuf != NULL)
+	if (db->keybuf)
 		free(db->keybuf);
-	if (db->datbuf != NULL)
+	if (db->datbuf)
 		free(db->datbuf);
-	if (db->name != NULL)
+	if (db->name)
 		free(db->name);
 	free(db);
 }
@@ -320,6 +322,8 @@ static int _db_find_and_lock(DB *db, const void *key, size_t keylen, int writelo
 	offset = _db_readptr(db, db->ptroff);
 	while (offset > 0) {
 		nextoffset = _db_readidx(db, offset);
+		if (nextoffset < 0)
+			return -1;
 		if (db->idx.keylen == keylen && !memcmp(db->keybuf, key, keylen))
 			break;
 		db->ptroff = offset; /* offset of this (unequal) record */
@@ -350,7 +354,7 @@ static off_t _db_readptr(DB *db, off_t offset)
 
 	if (lseek(db->idxfd, offset, SEEK_SET) == -1)
 		return -1;
-	if (read(db->idxfd, &ptr, PTR_SZ) != PTR_SZ)
+	if (read(db->idxfd, &ptr, sizeof(ptr)) != sizeof(ptr))
 		return -1;
 	return ptr;
 }
@@ -379,15 +383,15 @@ static off_t _db_readidx(DB *db, off_t offset)
 
 	/* read index record */
 	n = read(db->idxfd, &idx, sizeof(idx));
-	if (n < 0 || n != sizeof(idx))
+	if (n <= 0 || n != sizeof(idx))
 		return -1;
 
 	db->idx = idx;
 	/* read key */
 	n = read(db->idxfd, db->keybuf, db->idx.keylen);
-	if (n < 0 || n != db->idx.keylen)
+	if (n <= 0 || n != db->idx.keylen)
 		return -1;
-
+	/* skip free space, point the next index */
 	lseek(db->idxfd, db->idx.keyfree, SEEK_CUR);
 	/* get current offset */
 	db->curroff = lseek(db->idxfd, 0, SEEK_CUR);
@@ -407,7 +411,9 @@ static void *_db_readdat(DB *db, size_t *datlen)
 	if (len && read(db->datfd, db->datbuf, len) != len)
 		return NULL;
 	*datlen = len;
-
+	/* if length is zero, we also return pointer,
+	*	caller must be check the acutal data length
+	*/
 	return db->datbuf;		/* return pointer to data record */
 }
 
@@ -467,8 +473,6 @@ static void _db_dodelete(DB *db)
 	db->idx.flags = IDX_INVALID;
 	db->idx.idx_nextptr = freeptr;
 	_db_updateidx(db, db->idxoff, SEEK_SET, &db->idx);
-
-//	_db_writeidx(db, db->keybuf, db->keylen, db->idxoff, SEEK_SET, freeptr, IDX_INVALID);
 
 	/*
 	 * Write the new free list pointer. in the front of free list
@@ -598,11 +602,11 @@ int db_store(DBHANDLE h, const void *key, size_t keylen,
 	off_t ptrval;
 
 	if (flag != DB_INSERT && flag != DB_REPLACE &&
-	  flag != DB_STORE) {
+		flag != DB_STORE) {
 		errno = EINVAL;
 		return -1;
 	}
-	if (keylen <= 0 || keylen > KEYLEN_MAX || datlen > DATLEN_MAX)
+	if (!keylen || keylen > KEYLEN_MAX || datlen > DATLEN_MAX)
 		return -1;
 
 	/*
@@ -640,7 +644,6 @@ int db_store(DBHANDLE h, const void *key, size_t keylen,
 			db->idx.datafree = 0;
 			db->idx.flags = 0;
 			_db_writeidx(db, key, 0, SEEK_END, &db->idx);
-			printf("create new index\n");
 			/*
 			 * db->idxoff was set by _db_writeidx.  The new
 			 * record goes to the front of the hash chain.
@@ -653,14 +656,20 @@ int db_store(DBHANDLE h, const void *key, size_t keylen,
 			 * the free list and set both db->datoff and db->idxoff.
 			 * Reused record goes to the front of the hash chain.
 			 */
-			_db_writedat(db, data, datlen, db->idx.dataoff, SEEK_SET);
+			 /* special case */
+			if (db->idx.datalen + db->idx.datafree == 0) {
+				if (datlen) 
+					_db_writedat(db, data, datlen, 0, SEEK_END);
+			} else if (datlen) {
+				_db_writedat(db, data, datlen, db->idx.dataoff, SEEK_SET);
+			}
+
 			db->idx.idx_nextptr = ptrval;
 			db->idx.keyfree = db->idx.keylen + db->idx.keyfree - keylen;
 			db->idx.keylen = keylen;
 			db->idx.datafree = db->idx.datalen + db->idx.datafree - datlen;
 			db->idx.datalen = datlen;
 			db->idx.flags = 0;
-			printf("use free index\n");
 
 			_db_writeidx(db, key, db->idxoff, SEEK_SET, &db->idx);
 			_db_writeptr(db, db->chainoff, db->idxoff);
@@ -675,10 +684,18 @@ int db_store(DBHANDLE h, const void *key, size_t keylen,
 
 		/*
 		 * We are replacing an existing record.  We know the new
-		 * key equals the existing key, but we need to check if
-		 * the data records are the same size.
+		 * key equals the existing key, but we need to check
+		 * the data records.
 		 */
-		if (db->idx.datalen + db->idx.datafree < datlen) {
+		if (db->idx.datalen + db->idx.datafree == 0) {
+			if (datlen) {
+				_db_writedat(db, data, datlen, 0, SEEK_END);
+				db->idx.datalen = datlen;
+				db->idx.datafree = 0;
+				_db_updateidx(db, db->idxoff, SEEK_SET, &db->idx);
+			}
+			db->cnt_stor4++;
+		} else if (db->idx.datalen + db->idx.datafree < datlen) {
 			_db_dodelete(db);	/* delete the existing record */
 
 			/*
@@ -686,12 +703,10 @@ int db_store(DBHANDLE h, const void *key, size_t keylen,
 			 * (it may change with the deletion).
 			 */
 			ptrval = _db_readptr(db, db->chainoff);
-			printf("override index 1\n");
 			/*
 			 * Append new index and data records to end of files.
 			 */
 			_db_writedat(db, data, datlen, 0, SEEK_END);
-			
 			db->idx.idx_nextptr = ptrval;
 			db->idx.keylen = keylen;
 			db->idx.keyfree = 0;
@@ -706,10 +721,6 @@ int db_store(DBHANDLE h, const void *key, size_t keylen,
 			_db_writeptr(db, db->chainoff, db->idxoff);
 			db->cnt_stor3++;
 		} else {
-			/*
-			 * Same size data, just replace data record.
-			 */
-			 printf("override index 2\n");
 			_db_writedat(db, data, datlen, db->idx.dataoff, SEEK_SET);
 			if (db->idx.datalen != datlen) {
 				db->idx.datafree = db->idx.datalen + db->idx.datafree - datlen;
@@ -730,7 +741,7 @@ doreturn:	/* unlock hash chain locked by _db_find_and_lock */
  * Try to find a free index record and accompanying data record
  * of the correct sizes.  We're only called by db_store.
  */
-static int _db_findfree(DB *db, int keylen, int datlen)
+static int _db_findfree(DB *db, size_t keylen, size_t datlen)
 {
 	int	rc;
 	off_t offset, nextoffset, saveoffset;
@@ -748,8 +759,13 @@ static int _db_findfree(DB *db, int keylen, int datlen)
 
 	while (offset > 0) {
 		nextoffset = _db_readidx(db, offset);
+		if (nextoffset < 0) {
+			offset = 0;
+			break;
+		}
 		if (db->idx.keylen + db->idx.keyfree >= keylen &&
-			db->idx.datalen + db->idx.datafree >= datlen)
+			(db->idx.datalen + db->idx.datafree >= datlen ||
+			db->idx.datalen + db->idx.datafree == 0))
 			break;
 		saveoffset = offset;
 		offset = nextoffset;
@@ -829,7 +845,6 @@ void *db_nextrec(DBHANDLE h, void *key, size_t keylen, size_t *datlen)
 			ptr = NULL;		/* end of index file, EOF */
 			goto doreturn;
 		}
-		printf("read idx\n");
 		if (db->idx.flags & IDX_INVALID)
 			continue;
 		break;
@@ -838,7 +853,7 @@ void *db_nextrec(DBHANDLE h, void *key, size_t keylen, size_t *datlen)
 	if (key)
 		memcpy(key, db->keybuf, min_t(size_t, db->idx.keylen, keylen));	/* return key */
 
-	ptr = _db_readdat(db, datlen);	/* return pointer to data buffer */
+	ptr = _db_readdat(db, datlen);	/* return pointer to data buffer and acutal data length */
 	db->cnt_nextrec++;
 doreturn:
 	un_lock(db->idxfd, FREE_OFF, SEEK_SET, 1);
@@ -859,7 +874,7 @@ int db_fsync(DBHANDLE h)
 int db_drop(const char *name)
 {
 	char buf[1024];
-	int len = strlen(name);
+	size_t len = strlen(name);
 
 	if (len > sizeof(buf) - 5)
 		return -1;
