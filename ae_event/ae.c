@@ -145,11 +145,20 @@ int aeResizeSetSize(aeEventLoop *eventLoop, int setsize)
 	return AE_OK;
 }
 
+static void aeDeleteMinheap(aeEventLoop *eventLoop)
+{
+	min_heap_dtor(&eventLoop->heap);
+}
+
 void aeDeleteEventLoop(aeEventLoop *eventLoop)
 {
+	if (!eventLoop)
+		return;
+
 	aeApiFree(eventLoop);
 	zfree(eventLoop->events);
 	zfree(eventLoop->fired);
+	aeDeleteMinheap(eventLoop);
 	zfree(eventLoop);
 }
 
