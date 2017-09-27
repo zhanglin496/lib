@@ -143,6 +143,7 @@ aeTimeEvent *min_heap_top(min_heap_t *s);
 aeTimeEvent *min_heap_pop(min_heap_t *s);
 int min_heap_erase(min_heap_t *s, aeTimeEvent *e);
 min_heap_t *min_heap_init(min_heap_t *heap);
+void min_heap_dtor(min_heap_t *s);
 int aetimer_event_add(min_heap_t *s, aeTimeEvent *te);
 
 #endif
