@@ -35,17 +35,17 @@
 
 #include "ae.h"
 
-void min_heap_ctor(min_heap_t *s);
-void min_heap_dtor(min_heap_t *s);
-void min_heap_elem_init(aeTimeEvent *e);
+static void min_heap_ctor(min_heap_t *s);
+static void min_heap_dtor(min_heap_t *s);
+static void min_heap_elem_init(aeTimeEvent *e);
 
-int	min_heap_elem_greater(aeTimeEvent *a, aeTimeEvent *b);
-int	min_heap_push(min_heap_t *s, aeTimeEvent *e);
-int min_heap_reserve(min_heap_t *s, unsigned int n);
-void min_heap_shift_up_(min_heap_t *s, unsigned hole_index, aeTimeEvent *e);
-void min_heap_shift_down_(min_heap_t *s, unsigned hole_index, aeTimeEvent *e);
+static int min_heap_elem_greater(aeTimeEvent *a, aeTimeEvent *b);
+static int min_heap_push(min_heap_t *s, aeTimeEvent *e);
+static int min_heap_reserve(min_heap_t *s, unsigned int n);
+static void min_heap_shift_up_(min_heap_t *s, unsigned hole_index, aeTimeEvent *e);
+static void min_heap_shift_down_(min_heap_t *s, unsigned hole_index, aeTimeEvent *e);
 
-int min_heap_elem_greater(aeTimeEvent *a, aeTimeEvent *b)
+static int min_heap_elem_greater(aeTimeEvent *a, aeTimeEvent *b)
 {
 	if (a->when_sec > b->when_sec ||
 		(a->when_sec == b->when_sec && a->when_ms > b->when_ms))
@@ -53,20 +53,20 @@ int min_heap_elem_greater(aeTimeEvent *a, aeTimeEvent *b)
 	return 0;		
 }
 
-void min_heap_ctor(min_heap_t *s) 
+static void min_heap_ctor(min_heap_t *s) 
 { 
 	s->p = NULL; 
 	s->n = 0; 
 	s->a = 0; 
 }
 
-void min_heap_dtor(min_heap_t *s) 
+static void min_heap_dtor(min_heap_t *s) 
 {
 	if (s->p) 
 		free(s->p); 
 }
 
-void min_heap_elem_init(aeTimeEvent *e) 
+static void min_heap_elem_init(aeTimeEvent *e) 
 { 
 	e->min_heap_idx = -1; 
 }
@@ -86,7 +86,7 @@ aeTimeEvent *min_heap_top(min_heap_t *s)
 	return s->n ? *s->p : NULL; 
 }
 
-int min_heap_push(min_heap_t *s, aeTimeEvent *e)
+static int min_heap_push(min_heap_t *s, aeTimeEvent *e)
 {
 	if (min_heap_reserve(s, s->n + 1))
 		return -1;
@@ -114,7 +114,7 @@ int min_heap_elt_is_top(const aeTimeEvent *e)
 	return e->min_heap_idx == 0;
 }
 
-int min_heap_erase(min_heap_t* s, aeTimeEvent *e)
+int min_heap_erase(min_heap_t *s, aeTimeEvent *e)
 {
 	if (e->min_heap_idx != -1) {
 		aeTimeEvent *last = s->p[--s->n];
@@ -134,8 +134,9 @@ int min_heap_erase(min_heap_t* s, aeTimeEvent *e)
 
 	return -1;
 }
+
 // n = 1; check and malloc room 
-int min_heap_reserve(min_heap_t *s, unsigned int n)
+static int min_heap_reserve(min_heap_t *s, unsigned int n)
 {
 	if (s->a < n) {
 		aeTimeEvent **p;
@@ -150,7 +151,7 @@ int min_heap_reserve(min_heap_t *s, unsigned int n)
 	return 0;
 }
 
-void min_heap_shift_up_(min_heap_t *s, unsigned hole_index, aeTimeEvent *e)
+static void min_heap_shift_up_(min_heap_t *s, unsigned hole_index, aeTimeEvent *e)
 {
 	unsigned parent = (hole_index - 1) / 2;
 
@@ -163,7 +164,7 @@ void min_heap_shift_up_(min_heap_t *s, unsigned hole_index, aeTimeEvent *e)
 	(s->p[hole_index] = e)->min_heap_idx = hole_index;
 }
 
-void min_heap_shift_down_(min_heap_t* s, unsigned int hole_index, aeTimeEvent *e)
+static void min_heap_shift_down_(min_heap_t *s, unsigned int hole_index, aeTimeEvent *e)
 {
 	unsigned int min_child = 2 * (hole_index + 1);
 
@@ -199,5 +200,3 @@ void aetimer_event_init(aeTimeEvent *te)
 {
 	min_heap_elem_init(te);
 }
-
-
