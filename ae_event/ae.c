@@ -147,7 +147,7 @@ int aeResizeSetSize(aeEventLoop *eventLoop, int setsize)
 
 static void aeDeleteMinheap(aeEventLoop *eventLoop)
 {
-	min_heap_dtor(&eventLoop->heap);
+	min_heap_destroy(&eventLoop->heap);
 }
 
 void aeDeleteEventLoop(aeEventLoop *eventLoop)
