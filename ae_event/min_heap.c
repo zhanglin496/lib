@@ -38,7 +38,6 @@
 static void min_heap_ctor(min_heap_t *s);
 static void min_heap_dtor(min_heap_t *s);
 static void min_heap_elem_init(aeTimeEvent *e);
-
 static int min_heap_elem_greater(aeTimeEvent *a, aeTimeEvent *b);
 static int min_heap_push(min_heap_t *s, aeTimeEvent *e);
 static int min_heap_reserve(min_heap_t *s, unsigned int n);
@@ -187,6 +186,12 @@ min_heap_t *min_heap_init(min_heap_t *heap)
 		min_heap_ctor(heap);
 
 	return heap;
+}
+
+void min_heap_destroy(min_heap_t *heap)
+{
+	if (heap)
+		min_heap_dtor(heap);
 }
 
 int aetimer_event_add(min_heap_t *s, aeTimeEvent *te)
