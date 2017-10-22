@@ -49,41 +49,41 @@ static int min_heap_elem_greater(aeTimeEvent *a, aeTimeEvent *b)
 	if (a->when_sec > b->when_sec ||
 		(a->when_sec == b->when_sec && a->when_ms > b->when_ms))
 		return 1;
-	return 0;		
+	return 0;
 }
 
 static void min_heap_ctor(min_heap_t *s) 
 { 
-	s->p = NULL; 
-	s->n = 0; 
+	s->p = NULL;
+	s->n = 0;
 	s->a = 0; 
 }
 
 static void min_heap_dtor(min_heap_t *s) 
 {
-	if (s->p) 
-		free(s->p); 
+	if (s->p)
+		free(s->p);
 }
 
 static void min_heap_elem_init(aeTimeEvent *e) 
 { 
-	e->min_heap_idx = -1; 
+	e->min_heap_idx = -1;
 }
 
 int min_heap_empty(min_heap_t *s) 
 { 	
-	return 0u == s->n; 
+	return 0u == s->n;
 }
 
 unsigned min_heap_size(min_heap_t *s) 
 { 
-	return s->n; 
+	return s->n;
 }
 
 //取得根节点
 aeTimeEvent *min_heap_top(min_heap_t *s) 
 { 
-	return s->n ? *s->p : NULL; 
+	return s->n ? *s->p : NULL;
 }
 
 //插入一个节点
