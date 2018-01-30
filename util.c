@@ -44,3 +44,11 @@ static int str2dns(const char *name, char *dns)
 	}
 	return 0;
 }
+
+static inline int atoi(char *s)
+{
+	int i = 0;
+	while (isdigit(*s))
+		i = i * 10 + *s++ - '0';
+	return i;
+}
