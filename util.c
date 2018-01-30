@@ -49,6 +49,6 @@ static inline int atoi(char *s)
 {
 	int i = 0;
 	while (isdigit(*s))
-		i = i * 10 + *s++ - '0';
+		i = i * 10 + *(s++) - '0';
 	return i;
 }
